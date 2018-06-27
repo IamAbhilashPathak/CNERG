@@ -1,0 +1,30 @@
+The ABR Rules Collection (see ABRRulesCollection.js) has a list of rules which are queried before every new segment download. Each rule returns a maximum index, and the final decision is the minimum of each rule's return.
+Primary Rules
+
+The main rule driving ABR is either ThroughputRule or BolaRule. A player instance can be forced to choose either of the two rules using the MediaPlayer.setABRStrategy(value) method. Valid strategies are "abrDynamic", "abrBola" and "abrThroughput". The ABR strategy can be changed during a streaming session and its default value is "abrDynamic".
+
+The BOLA strategy ("abrBola") chooses bitrate based on current buffer level, with higher bitrates for higher buffer levels. The Throughput strategy ("abrThroughput") chooses bitrate based on the recent throughput history. The Dynamic strategy ("abrDynamic") switches smoothly between BOLA and Throughput in real time, playing to the strengths of both.
+
+ThroughputRule uses the recent throughput history to predict the future throughput. Once it has a throughput estimate (see ThroughputHistory.js), ThroughputRule scales it down by a 90% safety factor and chooses the highest bitrate supported by the safe throughput. If ThroughputRule chooses the top bitrate and the buffer level rises above some rich buffer threshold (see MediaPlayer.setRichBufferThreshold(value)) then it will not choose a lower bitrate until the buffer level drops below the rich buffer threshold, even if the throughput drops.
+
+BolaRule uses the buffer level to determine the bitrate: it prefers lower bitrates when the buffer level is lower and higher bitrates when the buffer level is higher. To avoid oscillations, BolaRule does not switch up to a bitrate if the throughput estimate (see ThroughputHistory.js) does not support the new higher bitrate. BolaRule keeps track of why the buffer level drops, maintaining a higher bitrate when the buffer level drops for reasons unrelated to network bandwidth limitations, e.g., when the buffer level is limited because of segment availability in live streaming.
+Secondary Rules
+
+While the active primary rule is the main determining factor, there is a number of secondary rules which handle some special cases.
+
+InsufficientBufferRule is a safety net to avoid rebuffering. When the buffer level is low, InsufficientBufferRule limits the bitrate to a conservative throughput estimate. If rebuffering does occur, InsufficientBufferRule forces the lowest bitrate to speed up recovery.
+
+SwitchHistoryRule avoids rapid bitrate oscillations. If any of the other ABR rules switch down from some bitrate, then SwitchHistoryRule disallows that bitrate and any higher bitrate for eight segments.
+
+DroppedFramesRule avoids bitrates that cannot render properly due to CPU limitations. When the video element drops more than 15% of the frames for some bitrate, DroppedFramesRule disallows that bitrate and any higher bitrate.
+Progress Monitoring Rule
+
+The above rules are used before a new segment download starts. If the bandwidth drops excessively during the course of a high-bitrate download, it increases the risk of rebuffering.
+
+AbandonRequestRule monitors the download progress during a segment download. If there is a rebuffering risk, it abandons the download and switches to a lower, safer bitrate.
+Custom Rules
+
+Apart from the built-in rules mentioned above, dash.js provides a mechanism to extend and/or modify its ABR algorithm through the definition of Custom Rules. The API methods that allows to interact with this mechanism are:
+
+    MediaPlayer.addABRCustomRule(type, rulename, rule). To add custom rules to the ABR Rules Collection. As an example of the interface that should implement any custom rule, there are some of them defined in dash.js reference player (example custom rules).
+    MediaPlayer.useDefaultABRRules(value). To disable all built-in rules so just the custom ones are queried. Useful when planing to build new ABR algorithms from scratch.
