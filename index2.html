@@ -1,0 +1,239 @@
+
+
+<html>
+<!-- <script src="dash.all.min.js"></script> -->
+<script src="dash.all.debug.js"></script>
+<style>
+    body{
+        margin: 0;
+        padding: 0;
+    }
+    video {
+       width: 100vw;
+       height: 100vh;
+    }
+</style>
+
+   <script type="text/javascript">
+    var $scope = {};
+    var startTime;
+    function requestFullScreen(e) {
+        var keyCode = e.keyCode;
+        if (keyCode != 70 ){
+            //alert("3")
+            return
+        }
+        // Supports most browsers and their versions.
+        var element = document.querySelector("video");
+        var requestMethod = element.requestFullScreen || element.webkitRequestFullScreen || element.mozRequestFullScreen || element.msRequestFullScreen;
+
+        if (requestMethod) { // Native full screen.
+            requestMethod.call(element);
+        } else if (typeof window.ActiveXObject !== "undefined") { // Older IE.
+            var wscript = new ActiveXObject("WScript.Shell");
+            if (wscript !== null) {
+                wscript.SendKeys("{F11}");
+            }
+        }
+    }
+    document.addEventListener("keydown", requestFullScreen, false);
+
+   	function loadPlayer(url){
+   		var video = document.querySelector("video");
+   		player = dashjs.MediaPlayer().create();
+   		player.initialize(video, url, true);
+   		// player.on(dashjs.MediaPlayer.events.METRIC_CHANGED, testFunctions.bind(player, this))
+   		player.on(dashjs.MediaPlayer.events.QUALITY_CHANGE_RENDERED, testFunctions)
+   		player.on(dashjs.MediaPlayer.events.FRAGMENT_LOADING_COMPLETED, testFragmentDlCompleted)
+                player.on(dashjs.MediaPlayer.events.FRAGMENT_LOADING_STARTED, testFragmentStarted)
+   		player.on(dashjs.MediaPlayer.events.PERIOD_SWITCH_COMPLETED, onPeriodSwitchTest)
+   		player.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, testPlayerMetricChanged)
+                player.on(dashjs.MediaPlayer.events.BUFFER_EMPTY, stallHandler)
+		// player.on(dashjs.MediaPlayer.events.PLAYBACK_PLAYING, playbackHandler)
+   	}
+
+
+    function stallHandler(e){
+        var timemessage = '';
+        var logTime = new Date().getTime();
+        timemessage += '[' + (logTime - startTime) + ']';
+        var pdt = {"Quality":player.getQualityFor('video'), "curTime":player.time()};
+        var t = JSON.stringify(pdt);
+        console.log(timemessage + " Abhijit Mondal: stalling: " + t);
+
+    }
+
+    function playbackHandler(e){
+        var timemessage = '';
+        var logTime = new Date().getTime();
+        timemessage += '[' + (logTime - startTime) + ']';
+        var pdt = {"Quality":player.getQualityFor('video'), "curTime":player.time()};
+        var t = JSON.stringify(pdt);
+        console.log(timemessage + " Abhijit Mondal: playing: " + t);
+    }
+
+    function onPeriodSwitchTest(e){
+        console.log("Abhijit Mondal: period switch" + JSON.stringify(e) )
+        $scope.streamInfo = e.toStreamInfo;
+    }
+
+    function testPlayerMetricChanged(e){
+        var lastCurTime = 0;
+        var lastCurTimeCnt = 0
+        $scope.timer = setInterval(function(){
+            updateMetrics("audio");
+            updateMetrics("video");
+            if($scope["curTime"] == lastCurTime){
+                lastCurTimeCnt ++;
+                if (lastCurTimeCnt > 120){
+                    player.seek(lastCurTime + 10); //skiping 2 seg
+                    console.log("Abhijit Mondal: seeking for " + lastCurTime);
+                }
+            }
+            else{
+                lastCurTime = $scope["curTime"];
+                lastCurTimeCnt = 0;
+            }
+        }, 1000);
+    }
+
+    function testFragmentDlCompleted(e){
+        //console.log([e])
+        var timemessage = '';
+        var logTime = new Date().getTime();
+        timemessage += '[' + (logTime - startTime) + ']';
+        var ev = {"e": e, "curTime": player.time()};
+        var request = JSON.stringify(ev);
+        console.log(timemessage + " Abhijit Mondal: download_complete: " + request);
+    }
+    
+    function testFragmentStarted(e){
+        //console.log([e])
+        var timemessage = '';
+        var logTime = new Date().getTime();
+        timemessage += '[' + (logTime - startTime) + ']';
+        var ev = {"curTime": player.time()};
+        var request = JSON.stringify(ev);
+        console.log(timemessage + " Abhijit Mondal: download_started: " + request);
+    }
+
+    function testFunctions(e){
+   		//console.log([ e]);
+        var timemessage = '';
+        var logTime = new Date().getTime();
+        timemessage += '[' + (logTime - startTime) + ']';
+        var dt = player.getBitrateInfoListFor(e.mediaType)[e.newQuality];
+        var pdt = {"oldQuality":e.oldQuality, "newQuality": e.newQuality, "dt":dt, "curTime":player.time()};
+        var t = JSON.stringify(pdt);
+        console.log(timemessage + " Abhijit Mondal: quality_changed: " + t);
+   	}
+
+    function autoload(){
+        var x = location.hash;
+        if ( x == ""){
+            //alert("nohash")
+        }
+        else{
+            //alert(x);
+            var url = x.substr(1);
+            startTime = new Date().getTime();
+            loadPlayer(url);
+        }
+    }
+
+    function calculateHTTPMetrics(type, requests) {
+
+        var latency = {},
+        download = {},
+        ratio = {};
+
+        var requestWindow = requests.slice(-20).filter(function (req) {
+            return req.responsecode >= 200 && req.responsecode < 300 && req.type === "MediaSegment" && req._stream === type && !!req._mediaduration;
+        }).slice(-4);
+
+        if (requestWindow.length > 0) {
+
+            var latencyTimes = requestWindow.map(function (req){ return Math.abs(req.tresponse.getTime() - req.trequest.getTime()) / 1000;});
+
+            latency[type] = {
+                average: latencyTimes.reduce(function(l, r) {return l + r;}) / latencyTimes.length,
+                high: latencyTimes.reduce(function(l, r) {return l < r ? r : l;}),
+                low: latencyTimes.reduce(function(l, r) {return l < r ? l : r;}),
+                count: latencyTimes.length
+            };
+
+            var downloadTimes = requestWindow.map(function (req){return Math.abs(req._tfinish.getTime() - req.tresponse.getTime()) / 1000;});
+
+            download[type] = {
+                average: downloadTimes.reduce(function(l, r) {return l + r;}) / downloadTimes.length,
+                high: downloadTimes.reduce(function(l, r) {return l < r ? r : l;}),
+                low: downloadTimes.reduce(function(l, r) {return l < r ? l : r;}),
+                count: downloadTimes.length
+            };
+
+            var durationTimes = requestWindow.map(function (req){ return req._mediaduration;});
+
+            ratio[type] = {
+                average: (durationTimes.reduce(function(l, r) {return l + r;}) / downloadTimes.length) / download[type].average,
+                high: durationTimes.reduce(function(l, r) {return l < r ? r : l;}) / download[type].low,
+                low: durationTimes.reduce(function(l, r) {return l < r ? l : r;}) / download[type].high,
+                count: durationTimes.length
+            };
+
+            return {latency: latency, download: download, ratio: ratio};
+
+        }
+        return null;
+    }
+	function updateMetrics(type) {
+
+		var metrics = player.getMetricsFor(type);
+		var dashMetrics = player.getDashMetrics();
+        $scope["curTime"] = player.time()
+
+		if (metrics && dashMetrics && $scope.streamInfo) {
+
+			var periodIdx = $scope.streamInfo.index;
+			var repSwitch = dashMetrics.getCurrentRepresentationSwitch(metrics);
+			var bufferLevel = dashMetrics.getCurrentBufferLevel(metrics);
+			var maxIndex = dashMetrics.getMaxIndexForBufferType(type, periodIdx);
+			var index = player.getQualityFor(type);
+			var bitrate = Math.round(dashMetrics.getBandwidthForRepresentation(repSwitch.to, periodIdx) / 1000);
+			var droppedFPS = dashMetrics.getCurrentDroppedFrames(metrics) ? dashMetrics.getCurrentDroppedFrames(metrics).droppedFrames : 0;
+
+			$scope[type + "BufferLength"] = bufferLevel;
+			$scope[type + "MaxIndex"] = maxIndex;
+			$scope[type + "Bitrate"] = bitrate;
+			$scope[type + "DroppedFrames"] = droppedFPS;
+
+			var httpMetrics = calculateHTTPMetrics(type, dashMetrics.getHttpRequests(metrics));
+			if (httpMetrics) {
+				$scope[type + "Download"] = httpMetrics.download[type].low.toFixed(2) + " | " + httpMetrics.download[type].average.toFixed(2) + " | " + httpMetrics.download[type].high.toFixed(2);
+				$scope[type + "Latency"] = httpMetrics.latency[type].low.toFixed(2) + " | " + httpMetrics.latency[type].average.toFixed(2) + " | " + httpMetrics.latency[type].high.toFixed(2);
+				$scope[type + "Ratio"] = httpMetrics.ratio[type].low.toFixed(2) + " | " + httpMetrics.ratio[type].average.toFixed(2) + " | " + httpMetrics.ratio[type].high.toFixed(2);
+			}
+
+			if ($scope.chartCount % 2 === 0) {
+				$scope.plotPoint('buffer', type, bufferLevel);
+				$scope.plotPoint('index', type, index);
+				$scope.plotPoint('bitrate', type, bitrate);
+				$scope.plotPoint('droppedFPS', type, droppedFPS);
+				if (httpMetrics) {
+					$scope.plotPoint('download', type, httpMetrics.download[type].average.toFixed(2));
+					$scope.plotPoint('latency', type, httpMetrics.latency[type].average.toFixed(2));
+					$scope.plotPoint('ratio', type, httpMetrics.ratio[type].average.toFixed(2));
+				}
+			}
+		}
+   		var t = JSON.stringify($scope);
+        
+        console.log("Abhijit Mondal: metric_updated: " + t);
+	}
+   </script>
+<body onload="autoload();">
+    <div>
+        <video controls id="avidplayertag"></video>
+    </div>
+</body>
+</html>
+
